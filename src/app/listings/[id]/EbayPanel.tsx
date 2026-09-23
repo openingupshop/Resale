@@ -13,7 +13,15 @@ export type EbayStatus = {
 };
 
 type Aspect = { name: string; required: boolean; multiple: boolean; freeText: boolean; values: string[] };
-type Condition = { id: number; enum: string; label: string };
+type Descriptor = {
+  id: string;
+  name: string;
+  required: boolean;
+  freeText: boolean;
+  maxLength: number | null;
+  values: { id: string; name: string }[];
+};
+type Condition = { id: number; enum: string; label: string; descriptors: Descriptor[] };
 type Option = { id: string; name: string };
 type Prepared = {
   categories: { id: string; path: string }[];
@@ -21,6 +29,7 @@ type Prepared = {
   aspects: Aspect[];
   prefilled: Record<string, string[]>;
   condition: { chosen: Condition; allowed: Condition[] };
+  prefilledDescriptors: Record<string, Record<string, string>>;
   setup: { fulfillment: Option[]; payment: Option[]; returns: Option[]; hasLocation: boolean };
   price: number;
 };
@@ -124,6 +133,8 @@ function EbayPost({ listingId, status }: { listingId: string; status: EbayStatus
   const [form, setForm] = useState({
     aspects: {} as Record<string, string>,
     condition: "",
+    /** Descriptor values per condition enum, so switching conditions keeps entries. */
+    descriptors: {} as Record<string, Record<string, string>>,
     price: "",
     fulfillment: "",
     payment: "",
@@ -159,6 +170,7 @@ function EbayPost({ listingId, status }: { listingId: string; status: EbayStatus
         ...f,
         aspects: Object.fromEntries(p.aspects.map((a) => [a.name, (p.prefilled[a.name] ?? []).join(", ")])),
         condition: p.condition.chosen.enum,
+        descriptors: p.prefilledDescriptors,
         price: f.price || String(p.price),
         fulfillment: f.fulfillment || p.setup.fulfillment[0]?.id || "",
         payment: f.payment || p.setup.payment[0]?.id || "",
@@ -181,11 +193,20 @@ function EbayPost({ listingId, status }: { listingId: string; status: EbayStatus
           .map(([k, v]) => [k, v.split(",").map((x) => x.trim()).filter(Boolean)] as const)
           .filter(([, v]) => v.length),
       );
+      const entered = form.descriptors[form.condition] ?? {};
+      const conditionDescriptors = currentDescriptors
+        .filter((d) => entered[d.id]?.trim())
+        .map((d) =>
+          d.freeText
+            ? { name: d.id, additionalInfo: entered[d.id].trim() }
+            : { name: d.id, values: [entered[d.id]] },
+        );
       const res = await post<{ url: string }>("/api/ebay/publish", {
         listingId,
         categoryId: prepared.categoryId,
         conditionEnum: form.condition,
         aspects,
+        conditionDescriptors,
         price: Number(form.price),
         policies: { fulfillment: form.fulfillment, payment: form.payment, returns: form.returns },
         postalCode: prepared.setup.hasLocation ? undefined : form.zip,
@@ -198,6 +219,18 @@ function EbayPost({ listingId, status }: { listingId: string; status: EbayStatus
       setPublishing(false);
     }
   }
+
+  const conditions = prepared
+    ? prepared.condition.allowed.length
+      ? prepared.condition.allowed
+      : [prepared.condition.chosen]
+    : [];
+  const currentDescriptors = conditions.find((c) => c.enum === form.condition)?.descriptors ?? [];
+  const setDescriptor = (id: string, v: string) =>
+    setForm((f) => ({
+      ...f,
+      descriptors: { ...f.descriptors, [f.condition]: { ...f.descriptors[f.condition], [id]: v } },
+    }));
 
   const setAspect = (name: string, v: string) =>
     setForm((f) => ({ ...f, aspects: { ...f.aspects, [name]: v } }));
@@ -239,7 +272,10 @@ function EbayPost({ listingId, status }: { listingId: string; status: EbayStatus
 
   const { setup } = prepared;
   const missingPolicies = !setup.fulfillment.length || !setup.payment.length || !setup.returns.length;
-  const missingRequired = prepared.aspects.filter((a) => a.required && !form.aspects[a.name]?.trim());
+  const missingRequired = [
+    ...prepared.aspects.filter((a) => a.required && !form.aspects[a.name]?.trim()),
+    ...currentDescriptors.filter((d) => d.required && !form.descriptors[form.condition]?.[d.id]?.trim()),
+  ];
   const canPublish =
     !missingPolicies &&
     !missingRequired.length &&
@@ -262,12 +298,33 @@ function EbayPost({ listingId, status }: { listingId: string; status: EbayStatus
       <Select
         label="Condition"
         value={form.condition}
-        options={(prepared.condition.allowed.length ? prepared.condition.allowed : [prepared.condition.chosen]).map((c) => ({
-          id: c.enum,
-          name: c.label,
-        }))}
+        options={conditions.map((c) => ({ id: c.enum, name: c.label }))}
         onChange={(v) => setForm((f) => ({ ...f, condition: v }))}
       />
+
+      {currentDescriptors.map((d) => {
+        const value = form.descriptors[form.condition]?.[d.id] ?? "";
+        const label = `${d.name}${d.required ? " *" : ""}`;
+        return d.freeText ? (
+          <label key={d.id} className="block">
+            <span className="mb-1 block text-sm">{label}</span>
+            <input
+              value={value}
+              maxLength={d.maxLength ?? undefined}
+              onChange={(e) => setDescriptor(d.id, e.target.value)}
+              className={inputClass}
+            />
+          </label>
+        ) : (
+          <Select
+            key={d.id}
+            label={label}
+            value={value}
+            options={[{ id: "", name: "Choose…" }, ...d.values]}
+            onChange={(v) => setDescriptor(d.id, v)}
+          />
+        );
+      })}
 
       <div className="space-y-3">
         <p className="text-sm font-medium">Item specifics</p>

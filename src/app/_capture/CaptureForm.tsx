@@ -180,7 +180,7 @@ export function CaptureForm({ remaining, limit }: { remaining: number; limit: nu
       <label className="mt-5 block">
         <span className="text-sm font-medium">Notes (optional)</span>
         <span className="block text-xs text-muted">
-          Things the photos can&apos;t show: worn twice, smoke-free home, original box included.
+          Things the photos can&apos;t show: tested and works, worn twice, smoke-free home, all pieces included.
         </span>
         <textarea
           value={notes}

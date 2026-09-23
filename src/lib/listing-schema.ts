@@ -11,6 +11,21 @@ export const CONDITION_GRADES = [
 ] as const;
 export type ConditionGrade = (typeof CONDITION_GRADES)[number];
 
+export const ITEM_TYPES = [
+  "clothing",
+  "electronics",
+  "media",
+  "trading_cards",
+  "collectibles",
+  "home",
+  "furniture",
+  "other",
+] as const;
+export type ItemType = (typeof ITEM_TYPES)[number];
+
+export const FUNCTIONAL_STATUS = ["tested_working", "untested", "not_working", "not_applicable"] as const;
+export type FunctionalStatus = (typeof FUNCTIONAL_STATUS)[number];
+
 export const PLATFORMS = [
   "ebay",
   "poshmark",
@@ -46,10 +61,29 @@ export const GeneratedListingSchema = z.object({
     .describe(
       "What could not be read or confirmed from the photos, e.g. 'No brand label visible.' Empty string if everything was legible.",
     ),
+  item_type: z
+    .enum(ITEM_TYPES)
+    .describe(
+      "clothing = clothes, shoes, bags, accessories, jewelry; media = books, video games, music, movies; trading_cards = sports, Pokémon, and other collectible cards; collectibles = toys, figures, coins, memorabilia, antiques; home = kitchen, decor, small household items; furniture = furniture and other bulky items",
+    ),
   department: z
     .enum(["Women", "Men", "Unisex", "Kids", "Baby", "Home", "Other"])
     .describe("Who or what the item is for"),
-  is_apparel: z.boolean().describe("Clothing, shoes, or accessories"),
+  is_apparel: z.boolean().describe("True when item_type is clothing"),
+  functional_status: z
+    .enum(FUNCTIONAL_STATUS)
+    .describe(
+      "For things that power on or have moving parts: tested_working only if the seller's notes say it was tested and works; not_working if the notes or photos show it is broken; otherwise untested. not_applicable for everything else.",
+    ),
+  barcode: z
+    .object({ type: z.enum(["UPC", "EAN", "ISBN"]), value: z.string() })
+    .nullable()
+    .describe("Only if every digit of a barcode or ISBN is legible in a photo; otherwise null"),
+  details: z
+    .array(z.object({ name: z.string(), value: z.string().nullable() }))
+    .describe(
+      "Type-specific facts buyers search for. Value only if read from the photos or seller notes; otherwise null so the seller fills it in.",
+    ),
   category: z.string().nullable().describe("Plain-language item type, e.g. 'Denim trucker jacket'"),
   categories: perPlatform(z.string()).describe(
     "Suggested category path on each platform, using that platform's own category names, separated by ' > '",
@@ -68,7 +102,9 @@ export const GeneratedListingSchema = z.object({
         value: z.string().nullable().describe("Only if a tape measure or ruler reading is visible; otherwise null"),
       }),
     )
-    .describe("The measurements buyers expect for this kind of item, e.g. pit to pit, length, sleeve"),
+    .describe(
+      "Measurements buyers expect: pit to pit, length, sleeve etc. for clothing; height, width, depth for furniture and objects. Empty for items where size is standard, like cards, books, and phones.",
+    ),
   est_weight_oz: z
     .number()
     .nullable()
@@ -120,6 +156,10 @@ const emptyPerPlatform = () =>
  */
 export const ListingSchema = GeneratedListingSchema.extend({
   titles: perPlatform(z.string().default("")),
+  item_type: z.enum(ITEM_TYPES).default("clothing"),
+  functional_status: z.enum(FUNCTIONAL_STATUS).default("not_applicable"),
+  barcode: GeneratedListingSchema.shape.barcode.default(null),
+  details: GeneratedListingSchema.shape.details.default([]),
   department: GeneratedListingSchema.shape.department.default("Other"),
   is_apparel: z.boolean().default(false),
   categories: perPlatform(z.string().default("")).default(emptyPerPlatform),
@@ -128,5 +168,8 @@ export const ListingSchema = GeneratedListingSchema.extend({
   est_weight_oz: z.number().nullable().default(null),
   hashtags: z.array(z.string()).default([]),
   etsy_tags: z.array(z.string()).default([]),
-}).merge(SellerFieldsSchema);
-export type Listing = z.infer<typeof ListingSchema>;
+})
+  .merge(SellerFieldsSchema)
+  // Clothing uses eBay's clothing fees and condition names; keep the flag in step with the type.
+  .transform((l) => ({ ...l, is_apparel: l.is_apparel || l.item_type === "clothing" }));
+export type Listing = z.output<typeof ListingSchema>;

@@ -169,6 +169,10 @@ function normalize(generated: GeneratedListing): Listing {
     hashtags: tagList(listing.hashtags).map((h) => h.replace(/\s+/g, "")).slice(0, 5),
     etsy_tags: tagList(listing.etsy_tags).filter((t) => t.length <= 20).slice(0, 13),
     weight_oz: listing.est_weight_oz,
+    is_apparel: listing.item_type === "clothing",
+    barcode: listing.barcode && /^[\dXx-]{8,17}$/.test(listing.barcode.value.replace(/\s/g, ""))
+      ? { ...listing.barcode, value: listing.barcode.value.replace(/[\s-]/g, "") }
+      : null,
   };
 }
 

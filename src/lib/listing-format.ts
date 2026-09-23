@@ -1,4 +1,5 @@
 import type { Listing, Platform } from "@/lib/listing-schema";
+import { FUNCTIONAL_LABELS, ITEM_TYPE_INFO } from "@/lib/item-types";
 import { listPriceFor, PLATFORM_INFO, takeHome } from "@/lib/platforms";
 
 export function formatPrice(l: Listing): string {
@@ -46,9 +47,48 @@ export function weightLabel(oz: number | null): string {
   return lb ? `${lb} lb${rest ? ` ${rest} oz` : ""}` : `${rest} oz`;
 }
 
-/** Keywords for the "Check prices" searches. */
+/** Keywords for the "Check prices" searches. An ISBN finds the exact book. */
 export function searchQuery(l: Listing): string {
+  if (l.barcode?.type === "ISBN") return l.barcode.value;
   return [l.brand, l.model, l.category].filter(Boolean).join(" ") || l.keywords.slice(0, 4).join(" ");
+}
+
+/** First detail whose name contains any of `names` (lowercase). */
+export const detail = (l: Listing, ...names: string[]) =>
+  l.details.find((d) => names.some((n) => d.name.toLowerCase().includes(n)))?.value ?? null;
+
+/** Detail with exactly this name, so "Grade" doesn't pick up "Graded". */
+export const detailExact = (l: Listing, name: string) =>
+  l.details.find((d) => d.name.toLowerCase() === name)?.value ?? detail(l, `${name} `, `${name}:`);
+
+/** Whether a trading card is in a grading slab, from the details read. */
+export function isGradedCard(l: Listing): boolean {
+  const graded = detailExact(l, "graded");
+  return Boolean(graded && /^y/i.test(graded)) || Boolean(detail(l, "grading company", "grader"));
+}
+
+/** Broken items are listed for parts whatever the cosmetic grade. */
+export function effectiveGrade(l: Listing) {
+  return l.functional_status === "not_working" ? ("Poor / for parts" as const) : l.condition.grade;
+}
+
+export function siteCondition(l: Listing, p: Platform): string {
+  // eBay lists cards as Graded or Ungraded rather than on the usual scale.
+  if (p === "ebay" && l.item_type === "trading_cards" && l.functional_status !== "not_working") {
+    return isGradedCard(l) ? "Graded" : "Ungraded";
+  }
+  return PLATFORM_INFO[p].condition(effectiveGrade(l), { apparel: l.is_apparel });
+}
+
+export function detailLines(l: Listing): string[] {
+  const lines = l.details.filter((d) => d.value && d.value.trim()).map((d) => `${d.name}: ${d.value}`);
+  if (l.barcode?.value) lines.push(`${l.barcode.type}: ${l.barcode.value}`);
+  return lines;
+}
+
+/** Sites that fit this kind of item, best first. */
+export function sitesFor(l: Listing): Platform[] {
+  return ITEM_TYPE_INFO[l.item_type].sites;
 }
 
 /** Sites without structured fields for these get them in the description. */
@@ -65,7 +105,7 @@ export function descriptionFor(l: Listing, p: Platform): string {
       l.size && `Size: ${l.size}`,
       l.color && `Color: ${l.color}`,
       l.material && `Material: ${l.material}`,
-      `Condition: ${PLATFORM_INFO[p].condition(l.condition.grade)}`,
+      `Condition: ${siteCondition(l, p)}`,
     ].filter(Boolean) as string[];
     parts.push("", ...details);
   }
@@ -73,12 +113,25 @@ export function descriptionFor(l: Listing, p: Platform): string {
   if (p === "etsy") {
     parts.push("");
     if (l.era) parts.push(`Era: ${l.era}`);
-    parts.push(`Condition: ${PLATFORM_INFO.etsy.condition(l.condition.grade)}`);
+    parts.push(`Condition: ${siteCondition(l, "etsy")}`);
   }
 
+  if (l.functional_status !== "not_applicable") {
+    const status = {
+      tested_working: "Tested and working.",
+      untested: "Untested; sold as-is.",
+      not_working: "Not working; sold for parts or repair.",
+    }[l.functional_status];
+    parts.push("", status);
+  }
+
+  const details = detailLines(l);
+  if (details.length) parts.push("", ...details);
+
   const measurements = measurementLines(l);
-  if (measurements.length) {
-    parts.push("", "Measurements (approx., laid flat):", ...measurements.map((m) => `- ${m}`));
+  const heading = ITEM_TYPE_INFO[l.item_type].measurementsHeading;
+  if (heading && measurements.length) {
+    parts.push("", `${heading}:`, ...measurements.map((m) => `- ${m}`));
   }
   if (l.condition.flaws.length) {
     parts.push("", "Flaws:", ...l.condition.flaws.map((f) => `- ${f}`));
@@ -93,15 +146,22 @@ export type SiteField = { label: string; value: string; note?: string };
 
 /** The fields a site's listing form asks for, in roughly the order it asks. */
 export function siteFields(l: Listing, p: Platform): SiteField[] {
-  const info = PLATFORM_INFO[p];
   const price = pricing(l, p);
   const fields: SiteField[] = [
     { label: "Category", value: l.categories[p] || l.category || "", note: "Suggested" },
     { label: "Brand", value: l.brand ?? "", note: l.brand ? undefined : "Not visible in photos" },
     { label: "Size", value: l.size ?? "" },
-    { label: "Condition", value: info.condition(l.condition.grade) },
+    { label: "Condition", value: siteCondition(l, p) },
     { label: "Color", value: l.color ?? "" },
-  ].filter((f) => !(p === "etsy" && f.label === "Condition"));
+  ]
+    .filter((f) => !(p === "etsy" && f.label === "Condition"))
+    .filter((f) => l.item_type === "clothing" || f.label !== "Size" || f.value);
+  if (l.functional_status !== "not_applicable") {
+    fields.push({ label: "Working?", value: FUNCTIONAL_LABELS[l.functional_status] });
+  }
+  if (l.barcode?.value && (p === "ebay" || p === "mercari")) {
+    fields.push({ label: l.barcode.type, value: l.barcode.value });
+  }
   if (p === "ebay" || p === "etsy") fields.push({ label: "Material", value: l.material ?? "" });
   if (p === "etsy") fields.push({ label: "When made", value: l.era ?? "" });
   if (p === "etsy" && l.etsy_tags.length) {

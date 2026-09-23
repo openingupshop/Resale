@@ -290,31 +290,76 @@ const GRADE_TO_IDS: Record<ConditionGrade, number[]> = {
   "Poor / for parts": [7000, 3010, 6000],
 };
 
-export type EbayCondition = { id: number; enum: string; label: string };
+/** Extra condition fields some categories require, e.g. grader and grade for trading cards. */
+export type ConditionDescriptor = {
+  id: string;
+  name: string;
+  required: boolean;
+  freeText: boolean;
+  maxLength: number | null;
+  values: { id: string; name: string }[];
+};
 
-export async function conditionFor(categoryId: string, grade: ConditionGrade, userId: string): Promise<{
-  chosen: EbayCondition;
-  allowed: EbayCondition[];
-}> {
+export type EbayCondition = { id: number; enum: string; label: string; descriptors: ConditionDescriptor[] };
+
+type RawDescriptor = {
+  conditionDescriptorId: string;
+  conditionDescriptorName: string;
+  conditionDescriptorValues?: { conditionDescriptorValueId: string; conditionDescriptorValueName: string }[];
+  conditionDescriptorConstraint?: { usage?: string; mode?: string; maxLength?: number };
+};
+
+const toDescriptor = (d: RawDescriptor): ConditionDescriptor => ({
+  id: d.conditionDescriptorId,
+  name: d.conditionDescriptorName,
+  required: d.conditionDescriptorConstraint?.usage === "REQUIRED",
+  freeText: d.conditionDescriptorConstraint?.mode === "FREE_TEXT" || !d.conditionDescriptorValues?.length,
+  maxLength: d.conditionDescriptorConstraint?.maxLength ?? null,
+  values: (d.conditionDescriptorValues ?? []).map((v) => ({
+    id: v.conditionDescriptorValueId,
+    name: v.conditionDescriptorValueName,
+  })),
+});
+
+/** Trading-card categories use Graded (2750) and Ungraded (4000) instead of the usual scale. */
+const CARD_IDS = { graded: [2750], ungraded: [4000] };
+
+export async function conditionFor(
+  categoryId: string,
+  grade: ConditionGrade,
+  userId: string,
+  card?: { graded: boolean },
+): Promise<{ chosen: EbayCondition; allowed: EbayCondition[] }> {
   const token = await userToken(userId);
   let allowed: EbayCondition[] = [];
   try {
     const res = await call<{
-      itemConditionPolicies?: { itemConditions?: { conditionId: string; conditionDescription: string }[] }[];
+      itemConditionPolicies?: {
+        itemConditions?: {
+          conditionId: string;
+          conditionDescription: string;
+          conditionDescriptors?: RawDescriptor[];
+        }[];
+      }[];
     }>(
       `${HOSTS.api}/sell/metadata/v1/marketplace/${MARKETPLACE_ID}/get_item_condition_policies?filter=${encodeURIComponent(`categoryIds:{${categoryId}}`)}`,
       token,
     );
     allowed = (res.itemConditionPolicies?.[0]?.itemConditions ?? [])
-      .map((c) => ({ id: Number(c.conditionId), enum: CONDITION_ENUM[Number(c.conditionId)], label: c.conditionDescription }))
+      .map((c) => ({
+        id: Number(c.conditionId),
+        enum: CONDITION_ENUM[Number(c.conditionId)],
+        label: c.conditionDescription,
+        descriptors: (c.conditionDescriptors ?? []).map(toDescriptor),
+      }))
       .filter((c) => c.enum);
   } catch {
     // Fall through to the grade's first preference.
   }
-  const prefs = GRADE_TO_IDS[grade];
+  const prefs = [...(card ? (card.graded ? CARD_IDS.graded : CARD_IDS.ungraded) : []), ...GRADE_TO_IDS[grade]];
   const chosen =
     prefs.map((id) => allowed.find((c) => c.id === id)).find(Boolean) ??
-    allowed[0] ?? { id: prefs[0], enum: CONDITION_ENUM[prefs[0]], label: grade };
+    allowed[0] ?? { id: prefs[0], enum: CONDITION_ENUM[prefs[0]], label: grade, descriptors: [] };
   return { chosen, allowed };
 }
 
@@ -384,6 +429,9 @@ export type PublishInput = {
   categoryId: string;
   conditionEnum: string;
   conditionDescription?: string;
+  /** name = descriptor ID; values = value IDs, or additionalInfo for free text. */
+  conditionDescriptors: { name: string; values?: string[]; additionalInfo?: string }[];
+  barcode: { type: "UPC" | "EAN" | "ISBN"; value: string } | null;
   aspects: Record<string, string[]>;
   price: number;
   weightOz: number | null;
@@ -406,11 +454,13 @@ export async function publishListing(userId: string, input: PublishInput) {
       availability: { shipToLocationAvailability: { quantity: 1 } },
       condition: input.conditionEnum,
       ...(input.conditionDescription ? { conditionDescription: input.conditionDescription.slice(0, 1000) } : {}),
+      ...(input.conditionDescriptors.length ? { conditionDescriptors: input.conditionDescriptors } : {}),
       product: {
         title: input.title.slice(0, 80),
         description: input.descriptionHtml,
         aspects: input.aspects,
         imageUrls,
+        ...(input.barcode ? { [input.barcode.type.toLowerCase()]: [input.barcode.value] } : {}),
       },
       ...(input.weightOz
         ? { packageWeightAndSize: { weight: { value: input.weightOz, unit: "OUNCE" } } }

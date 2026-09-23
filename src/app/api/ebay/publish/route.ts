@@ -13,6 +13,15 @@ const Body = z.object({
   categoryId: z.string().min(1),
   conditionEnum: z.string().min(1),
   aspects: z.record(z.string(), z.array(z.string().min(1)).min(1)),
+  conditionDescriptors: z
+    .array(
+      z.object({
+        name: z.string().min(1),
+        values: z.array(z.string().min(1)).optional(),
+        additionalInfo: z.string().max(100).optional(),
+      }),
+    )
+    .default([]),
   price: z.number().positive(),
   policies: z.object({ fulfillment: z.string().min(1), payment: z.string().min(1), returns: z.string().min(1) }),
   postalCode: z.string().regex(/^\d{5}$/).optional(),
@@ -54,6 +63,8 @@ export async function POST(request: Request) {
       categoryId: input.categoryId,
       conditionEnum: input.conditionEnum,
       conditionDescription: conditionDescription(l),
+      conditionDescriptors: input.conditionDescriptors,
+      barcode: l.barcode?.value ? l.barcode : null,
       aspects: input.aspects,
       price: input.price,
       weightOz: l.weight_oz,

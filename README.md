@@ -58,6 +58,16 @@ compression size/quality, Claude model, and token prices used for cost logging.
   a copy button, plus "Copy everything". Each tab links to the site's sold (or
   active) search for the item and to its new-listing page. Shared details,
   measurements, package weight, flaws, and tags are edited once and autosave.
+- **Item types**: Claude first classifies the item (clothing, electronics, books & media,
+  trading cards, toys & collectibles, home goods, furniture, other). That picks which sites
+  are shown (e.g. cards: eBay, Mercari, Facebook; "More sites" shows the rest), the
+  type-specific details to capture (model and capacity, ISBN and edition, player/set/grade),
+  condition wording ("New, sealed / in box" instead of "New with tags"), and whether
+  measurements apply. Electronics carry a working status; without a "tested" note from the
+  seller they're listed as untested, and "not working" lists them for parts. Barcodes (UPC,
+  EAN, ISBN) are read only when every digit is legible and are sent to eBay. For trading
+  cards, eBay posting uses eBay's Graded/Ungraded conditions with grader, grade, and cert
+  number, using the values eBay publishes for the category.
 - **Pricing**: set what you want to take home; each site gets a list price that
   nets about that after its fees. Fee formulas, title limits, and condition names
   live in `src/lib/platforms.ts` (checked September 2026; update when sites change).
@@ -76,6 +86,13 @@ compression size/quality, Claude model, and token prices used for cost logging.
   (`/profit`) totals it by month, year, or all time and by site, and exports a CSV for
   bookkeeping. Mileage uses the IRS business rate for the listing's date
   (`MILEAGE_RATES` in `src/lib/config.ts`).
+
+## Install on a phone
+
+The app can be added to the home screen and opens full screen like an app (web app manifest
+in `src/app/manifest.ts`, icons in `public/icons/`). On Android, Chrome offers an Install
+button on the capture screen; on iPhone, the capture screen shows the Share → Add to Home
+Screen steps. Requires HTTPS, which Vercel provides.
 
 ## Limits and cost tracking
 

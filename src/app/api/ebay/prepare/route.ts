@@ -9,8 +9,8 @@ import {
   sellerSetup,
   suggestCategories,
 } from "@/lib/ebay";
-import { prefillAspects } from "@/lib/ebay-listing";
-import { pricing, searchQuery, titleFor } from "@/lib/listing-format";
+import { isGradedCard, prefillAspects, prefillDescriptors } from "@/lib/ebay-listing";
+import { effectiveGrade, pricing, searchQuery, titleFor } from "@/lib/listing-format";
 import { ListingSchema } from "@/lib/listing-schema";
 
 const Body = z.object({ listingId: z.guid(), categoryId: z.string().optional() });
@@ -45,7 +45,12 @@ export async function POST(request: Request) {
     }
     const [aspects, condition, setup] = await Promise.all([
       categoryAspects(categoryId),
-      conditionFor(categoryId, l.condition.grade, auth.userId),
+      conditionFor(
+        categoryId,
+        effectiveGrade(l),
+        auth.userId,
+        l.item_type === "trading_cards" ? { graded: isGradedCard(l) } : undefined,
+      ),
       sellerSetup(auth.userId),
     ]);
     return NextResponse.json({
@@ -54,6 +59,10 @@ export async function POST(request: Request) {
       aspects,
       prefilled: prefillAspects(l, aspects),
       condition,
+      // Keyed by condition enum, since descriptors differ per condition (graded vs ungraded).
+      prefilledDescriptors: Object.fromEntries(
+        condition.allowed.map((c) => [c.enum, prefillDescriptors(l, c.descriptors)]),
+      ),
       setup,
       price: pricing(l, "ebay").list,
       alreadyListed: row.ebay_listing_id,

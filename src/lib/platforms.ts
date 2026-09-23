@@ -21,7 +21,7 @@ export type PlatformInfo = {
   descriptionMax: number | null;
   photoMax: number;
   /** Condition options exactly as the site's form shows them. */
-  condition: (grade: ConditionGrade) => string;
+  condition: (grade: ConditionGrade, opts: { apparel: boolean }) => string;
   fees: FeeInfo;
   /** Search pre-filled with the item's keywords, sold items where the site supports it. */
   compsUrl: (query: string) => string;
@@ -44,16 +44,27 @@ export const PLATFORM_INFO: Record<Platform, PlatformInfo> = {
     titleMax: 80,
     descriptionMax: null,
     photoMax: 24,
-    condition: (g) =>
-      ({
-        "New with tags": "New with tags",
-        "New without tags": "New without tags",
-        Excellent: "Pre-owned – Excellent",
-        "Very good": "Pre-owned – Good",
-        Good: "Pre-owned – Good",
-        Fair: "Pre-owned – Fair",
-        "Poor / for parts": "For parts or not working",
-      })[g],
+    // eBay's final choices come from the category (see src/lib/ebay.ts); these are the usual names.
+    condition: (g, { apparel }) =>
+      apparel
+        ? {
+            "New with tags": "New with tags",
+            "New without tags": "New without tags",
+            Excellent: "Pre-owned – Excellent",
+            "Very good": "Pre-owned – Good",
+            Good: "Pre-owned – Good",
+            Fair: "Pre-owned – Fair",
+            "Poor / for parts": "For parts or not working",
+          }[g]
+        : {
+            "New with tags": "New",
+            "New without tags": "Open box",
+            Excellent: "Used",
+            "Very good": "Used",
+            Good: "Used",
+            Fair: "Used",
+            "Poor / for parts": "For parts or not working",
+          }[g],
     fees: {
       fee: (price, { apparel }) =>
         (price * (apparel ? 15.3 : 13.6)) / 100 + (price > 10 ? 0.4 : 0.3),

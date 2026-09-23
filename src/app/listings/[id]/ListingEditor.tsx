@@ -5,8 +5,17 @@ import { useEffect, useRef, useState } from "react";
 import { CopyButton } from "@/components/CopyButton";
 import { Field, inputClass, Section } from "@/components/fields";
 import { formatUsd } from "@/lib/cost";
-import { defaultTakeHome, money, pricing, titleFor } from "@/lib/listing-format";
-import { CONDITION_GRADES, PLATFORMS, type Listing, type Platform } from "@/lib/listing-schema";
+import { FUNCTIONAL_LABELS, ITEM_TYPE_INFO, conditionLabel } from "@/lib/item-types";
+import { defaultTakeHome, money, pricing, sitesFor, titleFor } from "@/lib/listing-format";
+import {
+  CONDITION_GRADES,
+  FUNCTIONAL_STATUS,
+  ITEM_TYPES,
+  PLATFORMS,
+  type ItemType,
+  type Listing,
+  type Platform,
+} from "@/lib/listing-schema";
 import { PLATFORM_INFO } from "@/lib/platforms";
 import type { SaleRow } from "@/lib/profit";
 import { createClient } from "@/lib/supabase/client";
@@ -69,7 +78,8 @@ export function ListingEditor({
     oz: initial.weight_oz ? String(Math.round(initial.weight_oz % 16)) : "",
   });
   const [save, setSave] = useState<SaveState>("saved");
-  const [platform, setPlatform] = useState<Platform>("ebay");
+  const [platform, setPlatform] = useState<Platform>(sitesFor(initial)[0]);
+  const [allSites, setAllSites] = useState(false);
   const lastSaved = useRef(JSON.stringify(initial));
 
   // Debounced autosave; skips when nothing changed since the last save.
@@ -131,7 +141,11 @@ export function ListingEditor({
 
   const unidentified = !listing.brand || listing.identification_note.trim().length > 0;
   const goalPlaceholder = String(defaultTakeHome(listing));
-  const prices = PLATFORMS.map((p) => ({ p, ...pricing(listing, p) }));
+  const fitting = sitesFor(listing);
+  const shownSites = allSites ? [...fitting, ...PLATFORMS.filter((p) => !fitting.includes(p))] : fitting;
+  const prices = shownSites.map((p) => ({ p, ...pricing(listing, p) }));
+  const typeInfo = ITEM_TYPE_INFO[listing.item_type];
+  const isClothing = listing.item_type === "clothing";
 
   return (
     <div className="space-y-7">
@@ -168,7 +182,7 @@ export function ListingEditor({
       {/* One tab per marketplace, fields in that site's form order */}
       <section className="rounded-2xl border border-border bg-surface p-3">
         <div className="-mx-3 flex gap-1 overflow-x-auto px-3 pb-3" role="tablist">
-          {PLATFORMS.map((p) => (
+          {shownSites.map((p) => (
             <button
               key={p}
               type="button"
@@ -182,6 +196,16 @@ export function ListingEditor({
               {PLATFORM_INFO[p].shortLabel}
             </button>
           ))}
+          <button
+            type="button"
+            onClick={() => {
+              if (allSites && !fitting.includes(platform)) setPlatform(fitting[0]);
+              setAllSites(!allSites);
+            }}
+            className="shrink-0 rounded-full px-3 py-1.5 text-sm font-medium text-accent"
+          >
+            {allSites ? "Fewer sites" : `More sites (${PLATFORMS.length - fitting.length})`}
+          </button>
         </div>
         <PlatformPanel
           listingId={id}
@@ -195,6 +219,47 @@ export function ListingEditor({
       </section>
 
       <Section title="Item details · shared by every site">
+        <div className="grid grid-cols-2 gap-3">
+          <label className="block">
+            <span className="mb-1 block text-sm font-medium">Kind of item</span>
+            <select
+              value={listing.item_type}
+              onChange={(e) => {
+                const item_type = e.target.value as ItemType;
+                update((l) => ({ ...l, item_type, is_apparel: item_type === "clothing" }));
+                if (!allSites && !ITEM_TYPE_INFO[item_type].sites.includes(platform)) {
+                  setPlatform(ITEM_TYPE_INFO[item_type].sites[0]);
+                }
+              }}
+              className={inputClass}
+            >
+              {ITEM_TYPES.map((t) => (
+                <option key={t} value={t}>
+                  {ITEM_TYPE_INFO[t].label}
+                </option>
+              ))}
+            </select>
+          </label>
+          <label className="block">
+            <span className="mb-1 block text-sm font-medium">Working?</span>
+            <select
+              value={listing.functional_status}
+              onChange={(e) => set("functional_status", e.target.value as Listing["functional_status"])}
+              className={inputClass}
+            >
+              {FUNCTIONAL_STATUS.map((f) => (
+                <option key={f} value={f}>
+                  {FUNCTIONAL_LABELS[f]}
+                </option>
+              ))}
+            </select>
+          </label>
+        </div>
+        {listing.functional_status === "untested" && (
+          <p className="text-xs text-warn-fg">
+            Listed as untested, sold as-is. If you&apos;ve tested it, change this to &quot;Tested, works&quot;.
+          </p>
+        )}
         <Field
           label="Description"
           multiline
@@ -206,13 +271,15 @@ export function ListingEditor({
           [
             ["brand", "Brand"],
             ["model", "Model / style"],
-            ["category", "Item type"],
+            ["category", "What it is"],
             ["size", "Size"],
             ["color", "Color"],
             ["material", "Material"],
             ["era", "Era"],
           ] as const
-        ).map(([key, label]) => (
+        )
+          .filter(([key]) => key !== "size" || isClothing || listing.size)
+          .map(([key, label]) => (
           <Field
             key={key}
             label={label}
@@ -221,11 +288,64 @@ export function ListingEditor({
             onChange={(v) => set(key, nullable(v))}
           />
         ))}
+
+        {listing.details.map((d, i) => (
+          <Field
+            key={`detail-${i}`}
+            label={d.name}
+            value={d.value ?? ""}
+            placeholder="Fill in if you know it"
+            onChange={(v) =>
+              update((l) => ({
+                ...l,
+                details: l.details.map((x, j) => (j === i ? { ...x, value: nullable(v) } : x)),
+              }))
+            }
+          />
+        ))}
+
+        <div className="grid grid-cols-[7rem_1fr] gap-2">
+          <label className="block">
+            <span className="mb-1 block text-sm font-medium">Barcode</span>
+            <select
+              value={listing.barcode?.type ?? "UPC"}
+              onChange={(e) =>
+                set("barcode", {
+                  type: e.target.value as "UPC" | "EAN" | "ISBN",
+                  value: listing.barcode?.value ?? "",
+                })
+              }
+              className={inputClass}
+            >
+              <option>UPC</option>
+              <option>EAN</option>
+              <option>ISBN</option>
+            </select>
+          </label>
+          <label className="block">
+            <span className="mb-1 block text-sm font-medium">&nbsp;</span>
+            <input
+              inputMode="numeric"
+              aria-label="Barcode number"
+              value={listing.barcode?.value ?? ""}
+              placeholder="Only if printed on it"
+              onChange={(e) => {
+                const value = e.target.value.replace(/[^\dXx]/g, "");
+                set("barcode", value ? { type: listing.barcode?.type ?? "UPC", value } : null);
+              }}
+              className={inputClass}
+            />
+          </label>
+        </div>
       </Section>
 
-      <Section title="Measurements">
+      <Section title={isClothing ? "Measurements" : "Size & shipping"}>
         <p className="text-xs text-muted">
-          Measure flat, in inches. Buyers on Grailed, Poshmark, and eBay expect these.
+          {isClothing
+            ? "Measure flat, in inches. Buyers on Grailed, Poshmark, and eBay expect these."
+            : typeInfo.measurementsHeading
+              ? "Inches. Buyers and shipping labels need these."
+              : "Standard-size item; add measurements only if they help."}
         </p>
         {listing.measurements.map((m, i) => (
           <div key={i} className="flex items-center gap-2">
@@ -300,7 +420,9 @@ export function ListingEditor({
             className={inputClass}
           >
             {CONDITION_GRADES.map((g) => (
-              <option key={g}>{g}</option>
+              <option key={g} value={g}>
+                {conditionLabel(listing.item_type, g)}
+              </option>
             ))}
           </select>
           <p className="mt-1 text-xs text-muted">Each site tab shows this in that site&apos;s own terms.</p>
