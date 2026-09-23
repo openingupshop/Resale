@@ -9,6 +9,7 @@ import { defaultTakeHome, money, pricing, titleFor } from "@/lib/listing-format"
 import { CONDITION_GRADES, PLATFORMS, type Listing, type Platform } from "@/lib/listing-schema";
 import { PLATFORM_INFO } from "@/lib/platforms";
 import { createClient } from "@/lib/supabase/client";
+import type { EbayStatus } from "./EbayPanel";
 import { PhotoStrip } from "./PhotoStrip";
 import { PlatformPanel } from "./PlatformPanel";
 
@@ -32,6 +33,8 @@ export function ListingEditor({
   id,
   initial,
   photoUrls,
+  ebay,
+  notice,
   thumbnail,
   createdAt,
   photoCount,
@@ -40,6 +43,8 @@ export function ListingEditor({
   id: string;
   initial: Listing;
   photoUrls: string[];
+  ebay: EbayStatus;
+  notice: string | null;
   thumbnail: string | null;
   createdAt: string;
   photoCount: number;
@@ -140,6 +145,8 @@ export function ListingEditor({
         </div>
       </div>
 
+      {notice && <p className="rounded-xl bg-background p-3 text-sm">{notice}</p>}
+
       <PhotoStrip urls={photoUrls} />
 
       {unidentified && (
@@ -173,6 +180,9 @@ export function ListingEditor({
           ))}
         </div>
         <PlatformPanel
+          listingId={id}
+          ebay={ebay}
+          onComps={(c) => set("ebay_comps", c)}
           listing={listing}
           platform={platform}
           photoCount={photoUrls.length || photoCount}
@@ -337,6 +347,13 @@ export function ListingEditor({
           />
         </div>
         {listing.price.basis && <p className="text-sm text-muted">{listing.price.basis}</p>}
+        {listing.ebay_comps && (
+          <p className="text-sm">
+            eBay asking prices now: ${Math.round(listing.ebay_comps.p25)}–$
+            {Math.round(listing.ebay_comps.p75)} (typical ${Math.round(listing.ebay_comps.median)},{" "}
+            {listing.ebay_comps.count} listings)
+          </p>
+        )}
 
         <MoneyInput
           label="What you want to take home"

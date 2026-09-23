@@ -1,7 +1,8 @@
 import { createServerClient } from "@supabase/ssr";
 import { NextResponse, type NextRequest } from "next/server";
 
-const PUBLIC_PATHS = ["/login", "/auth"];
+// eBay calls the account-deletion endpoint without a user session.
+const PUBLIC_PATHS = ["/login", "/auth", "/api/ebay/account-deletion"];
 
 /** Refreshes the Supabase session cookie and gates signed-out users. */
 export async function updateSession(request: NextRequest) {

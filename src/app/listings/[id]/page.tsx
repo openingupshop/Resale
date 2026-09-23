@@ -1,17 +1,25 @@
 import { notFound } from "next/navigation";
 import { AppHeader } from "@/components/AppHeader";
+import { ebayAppConfigured, ebayConfigured, getConnection, listingUrl } from "@/lib/ebay";
 import { ListingSchema } from "@/lib/listing-schema";
 import { createClient } from "@/lib/supabase/server";
 import { ListingEditor } from "./ListingEditor";
 
-export default async function ListingPage({ params }: PageProps<"/listings/[id]">) {
+const EBAY_NOTICES: Record<string, string> = {
+  connected: "eBay connected. You can post this listing now.",
+  denied: "eBay wasn't connected.",
+  error: "Couldn't connect eBay. Try again.",
+};
+
+export default async function ListingPage({ params, searchParams }: PageProps<"/listings/[id]">) {
   const { id } = await params;
+  const { ebay: ebayParam } = await searchParams;
   const supabase = await createClient();
 
   const [{ data: listing }, { data: generation }] = await Promise.all([
     supabase
       .from("listings")
-      .select("id, created_at, photo_count, photo_paths, thumbnail, data")
+      .select("id, user_id, created_at, photo_count, photo_paths, thumbnail, data, ebay_listing_id")
       .eq("id", id)
       .maybeSingle(),
     supabase
@@ -31,6 +39,16 @@ export default async function ListingPage({ params }: PageProps<"/listings/[id]"
     : { data: [] };
   const photoUrls = (signed ?? []).flatMap((s) => (s.signedUrl ? [s.signedUrl] : []));
 
+  const configured = ebayConfigured();
+  const connection = configured ? await getConnection(listing.user_id) : null;
+  const ebay = {
+    configured,
+    pricesConfigured: ebayAppConfigured(),
+    connected: Boolean(connection),
+    username: connection?.username ?? null,
+    listingUrl: listing.ebay_listing_id ? listingUrl(listing.ebay_listing_id) : null,
+  };
+
   return (
     <>
       <AppHeader />
@@ -39,6 +57,8 @@ export default async function ListingPage({ params }: PageProps<"/listings/[id]"
           id={listing.id}
           initial={data.data}
           photoUrls={photoUrls}
+          ebay={ebay}
+          notice={typeof ebayParam === "string" ? EBAY_NOTICES[ebayParam] ?? null : null}
           thumbnail={listing.thumbnail}
           createdAt={listing.created_at}
           photoCount={listing.photo_count}

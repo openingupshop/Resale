@@ -95,6 +95,21 @@ const SellerFieldsSchema = z.object({
   weight_oz: z.number().nullable().default(null),
   cost_paid: z.number().nullable().default(null),
   take_home_goal: z.number().nullable().default(null),
+  /** Latest eBay asking-price snapshot (see src/lib/ebay.ts activeComps). */
+  ebay_comps: z
+    .object({
+      query: z.string(),
+      count: z.number(),
+      low: z.number(),
+      median: z.number(),
+      high: z.number(),
+      p25: z.number(),
+      p75: z.number(),
+      fetchedAt: z.string(),
+      kind: z.literal("active"),
+    })
+    .nullable()
+    .default(null),
 });
 
 const emptyPerPlatform = () =>

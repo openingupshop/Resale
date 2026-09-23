@@ -22,7 +22,20 @@ for reading the photos.
    see `.env.example`):
    - `NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_ANON_KEY`
    - `ANTHROPIC_API_KEY` — server only; used by `src/app/api/generate/route.ts`.
-3. `npm install && npm run dev`
+3. **eBay (optional, enables "Post to eBay" and live eBay prices)**
+   - Create an app at developer.ebay.com and copy the production App ID (client ID) and Cert ID
+     (client secret) into `EBAY_CLIENT_ID` / `EBAY_CLIENT_SECRET`. With just these two set,
+     the eBay price check works.
+   - Under User Tokens, create a RuName (redirect URL name) with the accept URL
+     `https://<your-domain>/api/ebay/callback`; put the RuName in `EBAY_RU_NAME`.
+   - Under Alerts & Notifications, set the marketplace account deletion endpoint to
+     `https://<your-domain>/api/ebay/account-deletion` and a 32–80 character verification token;
+     copy both into `EBAY_DELETION_ENDPOINT_URL` / `EBAY_VERIFICATION_TOKEN`.
+   - Add `SUPABASE_SERVICE_ROLE_KEY` (Supabase → Project settings → API). eBay tokens are
+     stored in `ebay_accounts`, which only the server can read.
+   - Sellers need business policies (shipping, payment, returns) on their eBay account;
+     the app links them to eBay's setup page if any are missing.
+4. `npm install && npm run dev`
 
 ## Configuration
 
@@ -48,6 +61,12 @@ compression size/quality, Claude model, and token prices used for cost logging.
 - **Pricing**: set what you want to take home; each site gets a list price that
   nets about that after its fees. Fee formulas, title limits, and condition names
   live in `src/lib/platforms.ts` (checked September 2026; update when sites change).
+- **eBay** (official APIs): connect an eBay account once, then "Post to eBay" suggests the
+  category, pre-fills item specifics we already know (never a brand that wasn't read),
+  maps the condition to what that category allows, uploads the photos, and publishes.
+  "eBay prices right now" shows current asking prices for similar items. Sold-price data
+  requires eBay's Marketplace Insights API, which needs separate approval from eBay.
+  The other sites have no public listing API, so they stay copy-and-paste.
 - **Photos** are kept in Supabase Storage. "Save photos" uses the phone's share
   sheet to put them in the camera roll, optionally with a square-cropped cover.
 - **History** (`/history`): past listings with price, date, and API cost.

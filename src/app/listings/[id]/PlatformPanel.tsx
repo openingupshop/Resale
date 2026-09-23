@@ -11,13 +11,20 @@ import {
 } from "@/lib/listing-format";
 import type { Listing, Platform } from "@/lib/listing-schema";
 import { PLATFORM_INFO } from "@/lib/platforms";
+import { EbayPanel, type EbayStatus } from "./EbayPanel";
 
 export function PlatformPanel({
+  listingId,
+  ebay,
+  onComps,
   listing,
   platform,
   onTitleChange,
   photoCount,
 }: {
+  listingId: string;
+  ebay: EbayStatus;
+  onComps: (c: Listing["ebay_comps"]) => void;
   listing: Listing;
   platform: Platform;
   onTitleChange: (v: string) => void;
@@ -33,6 +40,10 @@ export function PlatformPanel({
   return (
     <div className="space-y-4">
       <p className="text-xs text-muted">{info.tips}</p>
+
+      {platform === "ebay" && (
+        <EbayPanel listingId={listingId} listing={listing} status={ebay} onComps={onComps} />
+      )}
 
       <CopyButton
         text={fullListingText(listing, platform)}
