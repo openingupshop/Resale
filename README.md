@@ -69,7 +69,13 @@ compression size/quality, Claude model, and token prices used for cost logging.
   The other sites have no public listing API, so they stay copy-and-paste.
 - **Photos** are kept in Supabase Storage. "Save photos" uses the phone's share
   sheet to put them in the camera roll, optionally with a square-cropped cover.
-- **History** (`/history`): past listings with price, date, and API cost.
+- **History** (`/history`): past listings, filterable by active or sold, with price or
+  profit, date, and AI cost.
+- **Sale & profit**: on each listing, record what you paid, sourcing miles, and when it sells
+  (site, price, fees estimated from that site's formula, shipping label). **Profit**
+  (`/profit`) totals it by month, year, or all time and by site, and exports a CSV for
+  bookkeeping. Mileage uses the IRS business rate for the listing's date
+  (`MILEAGE_RATES` in `src/lib/config.ts`).
 
 ## Limits and cost tracking
 

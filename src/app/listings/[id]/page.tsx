@@ -2,6 +2,7 @@ import { notFound } from "next/navigation";
 import { AppHeader } from "@/components/AppHeader";
 import { ebayAppConfigured, ebayConfigured, getConnection, listingUrl } from "@/lib/ebay";
 import { ListingSchema } from "@/lib/listing-schema";
+import { SALE_COLUMNS, toSaleRow } from "@/lib/profit";
 import { createClient } from "@/lib/supabase/server";
 import { ListingEditor } from "./ListingEditor";
 
@@ -19,7 +20,7 @@ export default async function ListingPage({ params, searchParams }: PageProps<"/
   const [{ data: listing }, { data: generation }] = await Promise.all([
     supabase
       .from("listings")
-      .select("id, user_id, created_at, photo_count, photo_paths, thumbnail, data, ebay_listing_id")
+      .select(`${SALE_COLUMNS}, user_id, photo_count, photo_paths, thumbnail, data, ebay_listing_id`)
       .eq("id", id)
       .maybeSingle(),
     supabase
@@ -58,6 +59,7 @@ export default async function ListingPage({ params, searchParams }: PageProps<"/
           initial={data.data}
           photoUrls={photoUrls}
           ebay={ebay}
+          sale={toSaleRow(listing)}
           notice={typeof ebayParam === "string" ? EBAY_NOTICES[ebayParam] ?? null : null}
           thumbnail={listing.thumbnail}
           createdAt={listing.created_at}

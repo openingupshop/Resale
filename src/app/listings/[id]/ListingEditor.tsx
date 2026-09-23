@@ -8,9 +8,11 @@ import { formatUsd } from "@/lib/cost";
 import { defaultTakeHome, money, pricing, titleFor } from "@/lib/listing-format";
 import { CONDITION_GRADES, PLATFORMS, type Listing, type Platform } from "@/lib/listing-schema";
 import { PLATFORM_INFO } from "@/lib/platforms";
+import type { SaleRow } from "@/lib/profit";
 import { createClient } from "@/lib/supabase/client";
 import type { EbayStatus } from "./EbayPanel";
 import { PhotoStrip } from "./PhotoStrip";
+import { SalePanel } from "./SalePanel";
 import { PlatformPanel } from "./PlatformPanel";
 
 type Generation = {
@@ -34,6 +36,7 @@ export function ListingEditor({
   initial,
   photoUrls,
   ebay,
+  sale,
   notice,
   thumbnail,
   createdAt,
@@ -44,6 +47,7 @@ export function ListingEditor({
   initial: Listing;
   photoUrls: string[];
   ebay: EbayStatus;
+  sale: SaleRow;
   notice: string | null;
   thumbnail: string | null;
   createdAt: string;
@@ -426,6 +430,12 @@ export function ListingEditor({
           }}
         />
       </Section>
+
+      <SalePanel
+        initial={sale}
+        apparel={listing.is_apparel}
+        suggestedPrice={(p) => pricing(listing, p).list}
+      />
 
       <footer className="space-y-3 border-t border-border pt-4 text-xs text-muted">
         {generation && (

@@ -29,3 +29,13 @@ export const PRICE_PER_MTOK = {
 
 /** eBay title limit. */
 export const EBAY_TITLE_MAX = 80;
+
+/**
+ * IRS business standard mileage rates (USD per mile), by start date.
+ * Used for the sourcing-mileage deduction on the profit screen.
+ */
+export const MILEAGE_RATES: { from: string; rate: number }[] = [
+  { from: "2025-01-01", rate: 0.7 },
+  { from: "2026-01-01", rate: 0.725 },
+  { from: "2026-07-01", rate: 0.76 },
+];

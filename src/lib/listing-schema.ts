@@ -93,7 +93,6 @@ export type GeneratedListing = z.infer<typeof GeneratedListingSchema>;
 /** Fields the seller adds after generation. */
 const SellerFieldsSchema = z.object({
   weight_oz: z.number().nullable().default(null),
-  cost_paid: z.number().nullable().default(null),
   take_home_goal: z.number().nullable().default(null),
   /** Latest eBay asking-price snapshot (see src/lib/ebay.ts activeComps). */
   ebay_comps: z

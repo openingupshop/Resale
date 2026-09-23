@@ -219,7 +219,18 @@ function EbayPost({ listingId, status }: { listingId: string; status: EbayStatus
           {loading ? "Loading eBay details…" : liveUrl ? "Update eBay listing" : "Post to eBay"}
         </button>
         <p className="text-center text-xs text-muted">
-          Connected as {status.username ?? "your eBay account"}
+          Connected as {status.username ?? "your eBay account"} ·{" "}
+          <button
+            type="button"
+            className="underline"
+            onClick={async () => {
+              if (!confirm("Disconnect your eBay account?")) return;
+              await fetch("/api/ebay/disconnect", { method: "POST" });
+              window.location.reload();
+            }}
+          >
+            Disconnect
+          </button>
         </p>
         {error && <p className="text-sm text-danger">{error}</p>}
       </div>
