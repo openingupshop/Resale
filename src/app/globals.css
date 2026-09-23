@@ -1,0 +1,51 @@
+@import "tailwindcss";
+
+:root {
+  --background: #f6f5f2;
+  --surface: #ffffff;
+  --foreground: #1c1b19;
+  --muted: #6b6860;
+  --border: #e3e0d8;
+  --accent: #1f6f5c;
+  --accent-foreground: #ffffff;
+  --warn-bg: #fff4dc;
+  --warn-fg: #7a5200;
+  --danger: #b3261e;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --background: #141412;
+    --surface: #1e1d1b;
+    --foreground: #eeece6;
+    --muted: #a09c92;
+    --border: #34322e;
+    --accent: #4fb89c;
+    --accent-foreground: #0d1f1a;
+    --warn-bg: #3a2c0c;
+    --warn-fg: #f3cf7a;
+    --danger: #f2877f;
+  }
+}
+
+@theme inline {
+  --color-background: var(--background);
+  --color-surface: var(--surface);
+  --color-foreground: var(--foreground);
+  --color-muted: var(--muted);
+  --color-border: var(--border);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-warn-bg: var(--warn-bg);
+  --color-warn-fg: var(--warn-fg);
+  --color-danger: var(--danger);
+  --font-sans: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto,
+    "Helvetica Neue", Arial, sans-serif;
+}
+
+body {
+  background: var(--background);
+  color: var(--foreground);
+  font-family: var(--font-sans);
+  -webkit-tap-highlight-color: transparent;
+}
