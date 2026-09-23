@@ -1,0 +1,82 @@
+import { notFound } from "next/navigation";
+import { AppHeader } from "@/components/AppHeader";
+import { ebayAppConfigured, ebayConfigured, getConnection, listingUrl } from "@/lib/ebay";
+import { ListingSchema } from "@/lib/listing-schema";
+import { SALE_COLUMNS, toSaleRow } from "@/lib/profit";
+import { createClient } from "@/lib/supabase/server";
+import { ListingEditor } from "./ListingEditor";
+
+const EBAY_NOTICES: Record<string, string> = {
+  connected: "eBay connected. You can post this listing now.",
+  denied: "eBay wasn't connected.",
+  error: "Couldn't connect eBay. Try again.",
+};
+
+export default async function ListingPage({ params, searchParams }: PageProps<"/listings/[id]">) {
+  const { id } = await params;
+  const { ebay: ebayParam } = await searchParams;
+  const supabase = await createClient();
+
+  const [{ data: listing }, { data: generation }] = await Promise.all([
+    supabase
+      .from("listings")
+      .select(`${SALE_COLUMNS}, user_id, photo_count, photo_paths, thumbnail, data, ebay_listing_id`)
+      .eq("id", id)
+      .maybeSingle(),
+    supabase
+      .from("generations")
+      .select("model, input_tokens, output_tokens, cost_usd, duration_ms")
+      .eq("listing_id", id)
+      .maybeSingle(),
+  ]);
+  if (!listing) notFound();
+
+  const data = ListingSchema.safeParse(listing.data);
+  if (!data.success) notFound();
+
+  const paths: string[] = listing.photo_paths ?? [];
+  const { data: signed } = paths.length
+    ? await supabase.storage.from("listing-photos").createSignedUrls(paths, 60 * 60)
+    : { data: [] };
+  const photoUrls = (signed ?? []).flatMap((s) => (s.signedUrl ? [s.signedUrl] : []));
+
+  const configured = ebayConfigured();
+  const connection = configured ? await getConnection(listing.user_id) : null;
+  const ebay = {
+    configured,
+    pricesConfigured: ebayAppConfigured(),
+    connected: Boolean(connection),
+    username: connection?.username ?? null,
+    listingUrl: listing.ebay_listing_id ? listingUrl(listing.ebay_listing_id) : null,
+  };
+
+  return (
+    <>
+      <AppHeader />
+      <main className="mx-auto w-full max-w-xl flex-1 px-4 pb-16 pt-4">
+        <ListingEditor
+          id={listing.id}
+          initial={data.data}
+          photoUrls={photoUrls}
+          ebay={ebay}
+          sale={toSaleRow(listing)}
+          notice={typeof ebayParam === "string" ? EBAY_NOTICES[ebayParam] ?? null : null}
+          thumbnail={listing.thumbnail}
+          createdAt={listing.created_at}
+          photoCount={listing.photo_count}
+          generation={
+            generation
+              ? {
+                  model: generation.model,
+                  inputTokens: generation.input_tokens,
+                  outputTokens: generation.output_tokens,
+                  costUsd: Number(generation.cost_usd),
+                  durationMs: generation.duration_ms,
+                }
+              : null
+          }
+        />
+      </main>
+    </>
+  );
+}

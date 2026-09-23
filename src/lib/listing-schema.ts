@@ -1,0 +1,175 @@
+import { z } from "zod";
+
+export const CONDITION_GRADES = [
+  "New with tags",
+  "New without tags",
+  "Excellent",
+  "Very good",
+  "Good",
+  "Fair",
+  "Poor / for parts",
+] as const;
+export type ConditionGrade = (typeof CONDITION_GRADES)[number];
+
+export const ITEM_TYPES = [
+  "clothing",
+  "electronics",
+  "media",
+  "trading_cards",
+  "collectibles",
+  "home",
+  "furniture",
+  "other",
+] as const;
+export type ItemType = (typeof ITEM_TYPES)[number];
+
+export const FUNCTIONAL_STATUS = ["tested_working", "untested", "not_working", "not_applicable"] as const;
+export type FunctionalStatus = (typeof FUNCTIONAL_STATUS)[number];
+
+export const PLATFORMS = [
+  "ebay",
+  "poshmark",
+  "mercari",
+  "depop",
+  "vinted",
+  "facebook",
+  "grailed",
+  "etsy",
+  "offerup",
+] as const;
+export type Platform = (typeof PLATFORMS)[number];
+
+const perPlatform = <T extends z.ZodType>(value: T) =>
+  z.object(Object.fromEntries(PLATFORMS.map((p) => [p, value])) as Record<Platform, T>);
+
+/** Shape Claude must return. */
+export const GeneratedListingSchema = z.object({
+  titles: perPlatform(z.string()).describe(
+    "One title per platform, following that platform's rules in the instructions",
+  ),
+  description: z.string(),
+  brand: z
+    .string()
+    .nullable()
+    .describe("Only if printed on the item, label, tag, or packaging in the photos; otherwise null"),
+  model: z
+    .string()
+    .nullable()
+    .describe("Model, style name, or number only if legible in the photos; otherwise null"),
+  identification_note: z
+    .string()
+    .describe(
+      "What could not be read or confirmed from the photos, e.g. 'No brand label visible.' Empty string if everything was legible.",
+    ),
+  item_type: z
+    .enum(ITEM_TYPES)
+    .describe(
+      "clothing = clothes, shoes, bags, accessories, jewelry; media = books, video games, music, movies; trading_cards = sports, Pokémon, and other collectible cards; collectibles = toys, figures, coins, memorabilia, antiques; home = kitchen, decor, small household items; furniture = furniture and other bulky items",
+    ),
+  department: z
+    .enum(["Women", "Men", "Unisex", "Kids", "Baby", "Home", "Other"])
+    .describe("Who or what the item is for"),
+  is_apparel: z.boolean().describe("True when item_type is clothing"),
+  functional_status: z
+    .enum(FUNCTIONAL_STATUS)
+    .describe(
+      "For things that power on or have moving parts: tested_working only if the seller's notes say it was tested and works; not_working if the notes or photos show it is broken; otherwise untested. not_applicable for everything else.",
+    ),
+  barcode: z
+    .object({ type: z.enum(["UPC", "EAN", "ISBN"]), value: z.string() })
+    .nullable()
+    .describe("Only if every digit of a barcode or ISBN is legible in a photo; otherwise null"),
+  details: z
+    .array(z.object({ name: z.string(), value: z.string().nullable() }))
+    .describe(
+      "Type-specific facts buyers search for. Value only if read from the photos or seller notes; otherwise null so the seller fills it in.",
+    ),
+  category: z.string().nullable().describe("Plain-language item type, e.g. 'Denim trucker jacket'"),
+  categories: perPlatform(z.string()).describe(
+    "Suggested category path on each platform, using that platform's own category names, separated by ' > '",
+  ),
+  size: z.string().nullable(),
+  color: z.string().nullable(),
+  material: z.string().nullable(),
+  era: z
+    .string()
+    .nullable()
+    .describe("Decade or era only when tags, labels, or construction clearly show it; otherwise null"),
+  measurements: z
+    .array(
+      z.object({
+        name: z.string(),
+        value: z.string().nullable().describe("Only if a tape measure or ruler reading is visible; otherwise null"),
+      }),
+    )
+    .describe(
+      "Measurements buyers expect: pit to pit, length, sleeve etc. for clothing; height, width, depth for furniture and objects. Empty for items where size is standard, like cards, books, and phones.",
+    ),
+  est_weight_oz: z
+    .number()
+    .nullable()
+    .describe("Estimated packed shipping weight in ounces; null if you can't judge the item's size"),
+  condition: z.object({
+    grade: z.enum(CONDITION_GRADES),
+    summary: z.string(),
+    flaws: z.array(z.string()).describe("Each visible flaw with its location; empty if none seen"),
+  }),
+  price: z.object({
+    low: z.number(),
+    high: z.number(),
+    currency: z.string(),
+    basis: z.string().describe("One sentence on what drives the estimate"),
+  }),
+  keywords: z.array(z.string()),
+  hashtags: z.array(z.string()).describe("Exactly 5 Depop hashtags without the # sign"),
+  etsy_tags: z.array(z.string()).describe("Up to 13 Etsy tags, each 20 characters or fewer"),
+});
+export type GeneratedListing = z.infer<typeof GeneratedListingSchema>;
+
+/** Fields the seller adds after generation. */
+const SellerFieldsSchema = z.object({
+  weight_oz: z.number().nullable().default(null),
+  take_home_goal: z.number().nullable().default(null),
+  /** Latest eBay asking-price snapshot (see src/lib/ebay.ts activeComps). */
+  ebay_comps: z
+    .object({
+      query: z.string(),
+      count: z.number(),
+      low: z.number(),
+      median: z.number(),
+      high: z.number(),
+      p25: z.number(),
+      p75: z.number(),
+      fetchedAt: z.string(),
+      kind: z.literal("active"),
+    })
+    .nullable()
+    .default(null),
+});
+
+const emptyPerPlatform = () =>
+  Object.fromEntries(PLATFORMS.map((p) => [p, ""])) as Record<Platform, string>;
+
+/**
+ * Stored shape (listings.data). Defaults let listings saved by older
+ * versions of the app load without a migration.
+ */
+export const ListingSchema = GeneratedListingSchema.extend({
+  titles: perPlatform(z.string().default("")),
+  item_type: z.enum(ITEM_TYPES).default("clothing"),
+  functional_status: z.enum(FUNCTIONAL_STATUS).default("not_applicable"),
+  barcode: GeneratedListingSchema.shape.barcode.default(null),
+  details: GeneratedListingSchema.shape.details.default([]),
+  department: GeneratedListingSchema.shape.department.default("Other"),
+  is_apparel: z.boolean().default(false),
+  categories: perPlatform(z.string().default("")).default(emptyPerPlatform),
+  era: z.string().nullable().default(null),
+  measurements: GeneratedListingSchema.shape.measurements.default([]),
+  est_weight_oz: z.number().nullable().default(null),
+  hashtags: z.array(z.string()).default([]),
+  etsy_tags: z.array(z.string()).default([]),
+})
+  .merge(SellerFieldsSchema)
+  // Clothing uses eBay's clothing fees and condition names; keep the flag in step with the type.
+  .transform((l) => ({ ...l, is_apparel: l.is_apparel || l.item_type === "clothing" }));
+export type Listing = z.output<typeof ListingSchema>;
