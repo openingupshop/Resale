@@ -18,6 +18,7 @@ export function CaptureForm({ remaining, limit }: { remaining: number; limit: nu
   const [processing, setProcessing] = useState(0);
   const [generating, setGenerating] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [notes, setNotes] = useState("");
 
   const slotsLeft = MAX_PHOTOS - photos.length - processing;
   const outOfGenerations = remaining <= 0;
@@ -64,6 +65,7 @@ export function CaptureForm({ remaining, limit }: { remaining: number; limit: nu
         body: JSON.stringify({
           photos: photos.map((p) => p.base64),
           thumbnail,
+          notes: notes.trim() || undefined,
         }),
       });
       const body = await res.json().catch(() => ({}));
@@ -174,6 +176,20 @@ export function CaptureForm({ remaining, limit }: { remaining: number; limit: nu
       {photos.length > 1 && (
         <p className="mt-2 text-xs text-muted">Tap a photo to make it the cover.</p>
       )}
+
+      <label className="mt-5 block">
+        <span className="text-sm font-medium">Notes (optional)</span>
+        <span className="block text-xs text-muted">
+          Things the photos can&apos;t show: worn twice, smoke-free home, original box included.
+        </span>
+        <textarea
+          value={notes}
+          onChange={(e) => setNotes(e.target.value.slice(0, 500))}
+          rows={2}
+          disabled={generating}
+          className="mt-2 w-full rounded-xl border border-border bg-surface px-3 py-2.5 text-base outline-none focus:border-accent"
+        />
+      </label>
 
       {error && <p className="mt-4 text-sm text-danger">{error}</p>}
 

@@ -6,12 +6,18 @@ import {
   CLAUDE_EFFORT,
   CLAUDE_MAX_TOKENS,
   CLAUDE_MODEL,
-  EBAY_TITLE_MAX,
   MAX_PHOTOS,
   MIN_PHOTOS,
 } from "@/lib/config";
 import { costUsd, toTokenUsage, type TokenUsage } from "@/lib/cost";
-import { ListingSchema, type Listing } from "@/lib/listing-schema";
+import {
+  GeneratedListingSchema,
+  ListingSchema,
+  PLATFORMS,
+  type GeneratedListing,
+  type Listing,
+} from "@/lib/listing-schema";
+import { PLATFORM_INFO } from "@/lib/platforms";
 import { SYSTEM_PROMPT, userPrompt } from "@/lib/prompt";
 import { createClient } from "@/lib/supabase/server";
 import { getDailyUsage } from "@/lib/usage";
@@ -34,10 +40,11 @@ const RequestSchema = z.object({
     .startsWith("data:image/jpeg;base64,")
     .max(MAX_THUMBNAIL)
     .optional(),
+  notes: z.string().max(500).optional(),
 });
 
 const anthropic = new Anthropic(); // reads ANTHROPIC_API_KEY
-const outputFormat = zodOutputFormat(ListingSchema);
+const outputFormat = zodOutputFormat(GeneratedListingSchema);
 
 export async function POST(request: Request) {
   const supabase = await createClient();
@@ -54,7 +61,7 @@ export async function POST(request: Request) {
       { status: 400 },
     );
   }
-  const { photos, thumbnail } = parsed.data;
+  const { photos, thumbnail, notes } = parsed.data;
 
   const usage = await getDailyUsage(supabase, userId);
   if (usage.remaining <= 0) {
@@ -82,7 +89,7 @@ export async function POST(request: Request) {
                 source: { type: "base64", media_type: "image/jpeg", data },
               }),
             ),
-            { type: "text", text: userPrompt(photos.length) },
+            { type: "text", text: userPrompt(photos.length, notes) },
           ],
         },
       ],
@@ -130,20 +137,58 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "Couldn't save the listing." }, { status: 500 });
   }
 
+  // Keep the photos for re-download and marketplace posting. A failed upload
+  // shouldn't lose the listing the user just paid tokens for.
+  const photoPaths = await uploadPhotos(supabase, userId, row.id, photos);
+  if (photoPaths.length) {
+    await supabase.from("listings").update({ photo_paths: photoPaths }).eq("id", row.id);
+  }
+
   await logGeneration("success", row.id);
   return NextResponse.json({ id: row.id });
 }
 
-/** Enforce limits the schema can't express. */
-function normalize(listing: Listing): Listing {
+/** Enforce limits the schema can't express, and add seller-field defaults. */
+function normalize(generated: GeneratedListing): Listing {
+  const listing = ListingSchema.parse(generated);
   const low = Math.max(0, Math.min(listing.price.low, listing.price.high));
   const high = Math.max(listing.price.low, listing.price.high);
+  const titles = { ...listing.titles };
+  for (const p of PLATFORMS) {
+    const max = PLATFORM_INFO[p].titleMax;
+    titles[p] = max ? clampTitle(titles[p], max) : titles[p].trim();
+  }
+  const tagList = (xs: string[]) => [
+    ...new Set(xs.map((k) => k.replace(/^#/, "").trim().toLowerCase()).filter(Boolean)),
+  ];
   return {
     ...listing,
-    titles: { ...listing.titles, ebay: clampTitle(listing.titles.ebay, EBAY_TITLE_MAX) },
+    titles,
     price: { ...listing.price, low, high },
-    keywords: [...new Set(listing.keywords.map((k) => k.trim().toLowerCase()).filter(Boolean))],
+    keywords: tagList(listing.keywords),
+    hashtags: tagList(listing.hashtags).map((h) => h.replace(/\s+/g, "")).slice(0, 5),
+    etsy_tags: tagList(listing.etsy_tags).filter((t) => t.length <= 20).slice(0, 13),
+    weight_oz: listing.est_weight_oz,
   };
+}
+
+async function uploadPhotos(
+  supabase: Awaited<ReturnType<typeof createClient>>,
+  userId: string,
+  listingId: string,
+  photos: string[],
+): Promise<string[]> {
+  const results = await Promise.all(
+    photos.map(async (b64, i) => {
+      const path = `${userId}/${listingId}/${i + 1}.jpg`;
+      const { error } = await supabase.storage
+        .from("listing-photos")
+        .upload(path, Buffer.from(b64, "base64"), { contentType: "image/jpeg" });
+      if (error) console.error("generate: photo upload failed", path, error);
+      return error ? null : path;
+    }),
+  );
+  return results.filter((p): p is string => p !== null);
 }
 
 function clampTitle(title: string, max: number): string {

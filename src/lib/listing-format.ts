@@ -1,12 +1,5 @@
-import type { Listing } from "@/lib/listing-schema";
-
-export type Platform = "ebay" | "poshmark" | "facebook";
-
-export const PLATFORM_LABELS: Record<Platform, string> = {
-  ebay: "eBay",
-  poshmark: "Poshmark",
-  facebook: "Facebook Marketplace",
-};
+import type { Listing, Platform } from "@/lib/listing-schema";
+import { listPriceFor, PLATFORM_INFO, takeHome } from "@/lib/platforms";
 
 export function formatPrice(l: Listing): string {
   const { low, high } = l.price;
@@ -14,29 +7,126 @@ export function formatPrice(l: Listing): string {
   return low === high ? f(low) : `${f(low)}–${f(high)}`;
 }
 
-/** Detail lines shown under the description when copying a full listing. */
-export function detailLines(l: Listing): string[] {
-  const rows: [string, string | null][] = [
-    ["Brand", l.brand],
-    ["Model", l.model],
-    ["Category", l.category],
-    ["Size", l.size],
-    ["Color", l.color],
-    ["Material", l.material],
-    ["Condition", l.condition.grade],
-  ];
-  return rows.filter(([, v]) => v && v.trim()).map(([k, v]) => `${k}: ${v}`);
+export function money(n: number): string {
+  return `$${n.toFixed(2).replace(/\.00$/, "")}`;
 }
 
-export function fullListingText(l: Listing, platform: Platform): string {
-  const parts = [l.titles[platform], "", l.description.trim()];
+/** Title for a site, falling back for listings saved before that site existed. */
+export function titleFor(l: Listing, p: Platform): string {
+  return l.titles[p] || l.titles.poshmark || l.titles.ebay || "";
+}
+
+/** Default take-home goal: what the middle of the estimate nets on eBay. */
+export function defaultTakeHome(l: Listing): number {
+  const mid = (l.price.low + l.price.high) / 2;
+  return Math.max(0, Math.round(takeHome("ebay", mid, l.is_apparel)));
+}
+
+export function takeHomeGoal(l: Listing): number {
+  return l.take_home_goal ?? defaultTakeHome(l);
+}
+
+export function pricing(l: Listing, p: Platform) {
+  const goal = takeHomeGoal(l);
+  const list = listPriceFor(p, goal, l.is_apparel);
+  const fee = PLATFORM_INFO[p].fees.fee(list, { apparel: l.is_apparel });
+  return { goal, list, fee, net: list - fee };
+}
+
+export function measurementLines(l: Listing): string[] {
+  return l.measurements
+    .filter((m) => m.value && m.value.trim())
+    .map((m) => `${m.name}: ${m.value}`);
+}
+
+export function weightLabel(oz: number | null): string {
+  if (!oz) return "";
+  const lb = Math.floor(oz / 16);
+  const rest = Math.round(oz - lb * 16);
+  return lb ? `${lb} lb${rest ? ` ${rest} oz` : ""}` : `${rest} oz`;
+}
+
+/** Keywords for the "Check prices" searches. */
+export function searchQuery(l: Listing): string {
+  return [l.brand, l.model, l.category].filter(Boolean).join(" ") || l.keywords.slice(0, 4).join(" ");
+}
+
+/** Sites without structured fields for these get them in the description. */
+const DETAILS_IN_DESCRIPTION: Platform[] = ["facebook", "offerup"];
+
+export function descriptionFor(l: Listing, p: Platform): string {
+  const parts: string[] = [];
+  if (p === "depop" && l.titles.depop) parts.push(l.titles.depop, "");
+  parts.push(l.description.trim());
+
+  if (DETAILS_IN_DESCRIPTION.includes(p)) {
+    const details = [
+      l.brand && `Brand: ${l.brand}`,
+      l.size && `Size: ${l.size}`,
+      l.color && `Color: ${l.color}`,
+      l.material && `Material: ${l.material}`,
+      `Condition: ${PLATFORM_INFO[p].condition(l.condition.grade)}`,
+    ].filter(Boolean) as string[];
+    parts.push("", ...details);
+  }
+  // Etsy's form has no condition field, so it goes in the description.
+  if (p === "etsy") {
+    parts.push("");
+    if (l.era) parts.push(`Era: ${l.era}`);
+    parts.push(`Condition: ${PLATFORM_INFO.etsy.condition(l.condition.grade)}`);
+  }
+
+  const measurements = measurementLines(l);
+  if (measurements.length) {
+    parts.push("", "Measurements (approx., laid flat):", ...measurements.map((m) => `- ${m}`));
+  }
   if (l.condition.flaws.length) {
     parts.push("", "Flaws:", ...l.condition.flaws.map((f) => `- ${f}`));
   }
-  const details = detailLines(l);
-  if (details.length) parts.push("", ...details);
-  if (platform === "poshmark" && l.keywords.length) {
-    parts.push("", l.keywords.map((k) => `#${k.replace(/\s+/g, "")}`).join(" "));
+  if (p === "depop" && l.hashtags.length) {
+    parts.push("", l.hashtags.map((h) => `#${h}`).join(" "));
   }
   return parts.join("\n");
+}
+
+export type SiteField = { label: string; value: string; note?: string };
+
+/** The fields a site's listing form asks for, in roughly the order it asks. */
+export function siteFields(l: Listing, p: Platform): SiteField[] {
+  const info = PLATFORM_INFO[p];
+  const price = pricing(l, p);
+  const fields: SiteField[] = [
+    { label: "Category", value: l.categories[p] || l.category || "", note: "Suggested" },
+    { label: "Brand", value: l.brand ?? "", note: l.brand ? undefined : "Not visible in photos" },
+    { label: "Size", value: l.size ?? "" },
+    { label: "Condition", value: info.condition(l.condition.grade) },
+    { label: "Color", value: l.color ?? "" },
+  ].filter((f) => !(p === "etsy" && f.label === "Condition"));
+  if (p === "ebay" || p === "etsy") fields.push({ label: "Material", value: l.material ?? "" });
+  if (p === "etsy") fields.push({ label: "When made", value: l.era ?? "" });
+  if (p === "etsy" && l.etsy_tags.length) {
+    fields.push({ label: "Tags", value: l.etsy_tags.join(", "), note: `${l.etsy_tags.length}/13` });
+  }
+  if (p === "ebay" || p === "mercari" || p === "poshmark") {
+    fields.push({ label: "Package weight", value: weightLabel(l.weight_oz) });
+  }
+  fields.push({
+    label: "Price",
+    value: String(price.list),
+    note: `You take home about ${money(price.net)} after fees`,
+  });
+  return fields;
+}
+
+/** Everything for one site in one block, for a single copy. */
+export function fullListingText(l: Listing, p: Platform): string {
+  const title = PLATFORM_INFO[p].titleMax === null ? null : titleFor(l, p);
+  const inDescription = DETAILS_IN_DESCRIPTION.includes(p);
+  const fields = siteFields(l, p)
+    .filter((f) => f.value)
+    .filter((f) => !inDescription || f.label === "Category" || f.label === "Price")
+    .map((f) => `${f.label}: ${f.label === "Price" ? `$${f.value}` : f.value}`);
+  return [title, title && "", descriptionFor(l, p), "", ...fields]
+    .filter((x) => x !== null)
+    .join("\n");
 }

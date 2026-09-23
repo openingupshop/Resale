@@ -11,7 +11,7 @@ export default async function ListingPage({ params }: PageProps<"/listings/[id]"
   const [{ data: listing }, { data: generation }] = await Promise.all([
     supabase
       .from("listings")
-      .select("id, created_at, photo_count, thumbnail, data")
+      .select("id, created_at, photo_count, photo_paths, thumbnail, data")
       .eq("id", id)
       .maybeSingle(),
     supabase
@@ -25,6 +25,12 @@ export default async function ListingPage({ params }: PageProps<"/listings/[id]"
   const data = ListingSchema.safeParse(listing.data);
   if (!data.success) notFound();
 
+  const paths: string[] = listing.photo_paths ?? [];
+  const { data: signed } = paths.length
+    ? await supabase.storage.from("listing-photos").createSignedUrls(paths, 60 * 60)
+    : { data: [] };
+  const photoUrls = (signed ?? []).flatMap((s) => (s.signedUrl ? [s.signedUrl] : []));
+
   return (
     <>
       <AppHeader />
@@ -32,6 +38,7 @@ export default async function ListingPage({ params }: PageProps<"/listings/[id]"
         <ListingEditor
           id={listing.id}
           initial={data.data}
+          photoUrls={photoUrls}
           thumbnail={listing.thumbnail}
           createdAt={listing.created_at}
           photoCount={listing.photo_count}

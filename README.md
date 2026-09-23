@@ -10,7 +10,8 @@ for reading the photos.
 
 1. **Supabase**
    - Create a project.
-   - Run `supabase/migrations/0001_init.sql` in the SQL editor (or `supabase db push`).
+   - Run the files in `supabase/migrations/` in order in the SQL editor (or `supabase db push`).
+     `0002_photos.sql` creates the private `listing-photos` storage bucket.
    - Auth → URL Configuration: set Site URL to your Vercel URL and add
      `https://<your-domain>/auth/callback` (and `http://localhost:3000/auth/callback`)
      to Redirect URLs.
@@ -38,9 +39,17 @@ compression size/quality, Claude model, and token prices used for cost logging.
   and saves the listing. The prompt (`src/lib/prompt.ts`) tells Claude to leave
   brand and model empty and say what's missing when they can't be read, rather
   than guess. eBay titles are clamped to 80 characters on the server as well.
-- **Results** (`/listings/[id]`): every field is editable and autosaves; each has
-  a copy button, plus "Copy full listing" per platform. The price is labeled as
-  an estimate.
+- **Results** (`/listings/[id]`): one tab per marketplace (eBay, Poshmark, Mercari,
+  Depop, Vinted, Facebook Marketplace, Grailed, Etsy, OfferUp) showing that site's
+  title, description, suggested category, and condition in its own terms, each with
+  a copy button, plus "Copy everything". Each tab links to the site's sold (or
+  active) search for the item and to its new-listing page. Shared details,
+  measurements, package weight, flaws, and tags are edited once and autosave.
+- **Pricing**: set what you want to take home; each site gets a list price that
+  nets about that after its fees. Fee formulas, title limits, and condition names
+  live in `src/lib/platforms.ts` (checked September 2026; update when sites change).
+- **Photos** are kept in Supabase Storage. "Save photos" uses the phone's share
+  sheet to put them in the camera roll, optionally with a square-cropped cover.
 - **History** (`/history`): past listings with price, date, and API cost.
 
 ## Limits and cost tracking
