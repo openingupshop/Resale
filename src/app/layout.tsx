@@ -4,6 +4,8 @@ import "./globals.css";
 export const metadata: Metadata = {
   title: "Resale Lister",
   description: "Turn item photos into ready-to-post resale listings.",
+  applicationName: "Resale Lister",
+  appleWebApp: { capable: true, title: "Resale", statusBarStyle: "default" },
 };
 
 export const viewport: Viewport = {
